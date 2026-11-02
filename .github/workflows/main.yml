@@ -20,7 +20,7 @@ jobs:
           node-version: '22'
       - name: Install Playwright
         run: |
-          npm install --no-save @playwright/test
+          npm install --no-save @playwright/test docx xlsx pdf-lib mammoth
           npx playwright install --with-deps chromium
       - name: Run DocFlow browser tests
         run: |
@@ -71,11 +71,11 @@ jobs:
             expect(errors).toEqual([]);
           });
           EOF
-          npx playwright test smoke.spec.cjs --reporter=html,line
+          npx playwright test smoke.spec.cjs tests/document-e2e.spec.cjs --reporter=html,line
       - name: Upload test report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: docflow-playwright-report
-          path: playwright-report/
+          path: |\n            playwright-report/\n            test-results/
           if-no-files-found: ignore
