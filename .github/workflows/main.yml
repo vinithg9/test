@@ -1,0 +1,65 @@
+
+name: DocFlow Browser Tests
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Playwright
+        run: |
+          npm install --no-save @playwright/test
+          npx playwright install --with-deps chromium
+
+      - name: Run DocFlow browser tests
+        run: |
+          cat > smoke.spec.cjs <<'EOF'
+          const { test, expect } = require('@playwright/test');
+          const path = require('path');
+
+          const site = 'file://' + path.resolve('docflow-single-file.html');
+
+          test('homepage loads', async ({ page }) => {
+            await page.goto(site);
+            await expect(page.locator('body')).toContainText('DocFlow');
+          });
+
+          test('navigation and buttons are inspectable', async ({ page }) => {
+            await page.goto(site);
+            const buttons = page.locator('button');
+            expect(await buttons.count()).toBeGreaterThan(0);
+            for (const button of await buttons.all()) {
+              await expect(button).toHaveAccessibleName();
+            }
+          });
+
+          test('no uncaught JavaScript errors on initial load', async ({ page }) => {
+            const errors = [];
+            page.on('pageerror', error => errors.push(error.message));
+            await page.goto(site);
+            await page.waitForTimeout(1500);
+            expect(errors).toEqual([]);
+          });
+          EOF
+          npx playwright test smoke.spec.cjs --reporter=html,line
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docflow-playwright-report
+          path: playwright-report/
+          if-no-files-found: ignore
