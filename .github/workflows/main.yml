@@ -15,7 +15,7 @@ jobs:
         with:
           node-version: '22'
       - name: Install pinned verification dependencies
-        run: npm install --no-save @playwright/test@1.56.1 docx@9.5.1 xlsx@0.18.5 pdf-lib@1.17.1 mammoth@1.9.1
+        run: npm install --no-save @playwright/test@1.56.1 docx@9.5.1 https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz pdf-lib@1.17.1 mammoth@1.9.1
       - name: Install browsers
         run: npx playwright install --with-deps chromium
       - name: Verify release workflows
