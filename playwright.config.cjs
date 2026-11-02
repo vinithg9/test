@@ -1,0 +1,1 @@
+module.exports={testDir:'./tests',timeout:45000,expect:{timeout:15000},workers:2,retries:0,use:{headless:true,trace:'retain-on-failure',screenshot:'only-on-failure'},reporter:[['html',{open:'never'}],['line']],webServer:{command:'python3 -m http.server 4173 --bind 127.0.0.1',url:'http://127.0.0.1:4173/docflow-single-file.html',reuseExistingServer:false}};
