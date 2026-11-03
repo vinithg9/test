@@ -45,3 +45,5 @@ for(const width of [320,375,768,1440])test(`Responsive ${width}px: homepage and 
 test('Dialog has name, closes on Escape, returns focus',async({page})=>{await open(page,'word');await expect(page.locator('#workspace')).toHaveAccessibleName('Word Editor');await page.keyboard.press('Escape');await expect(page.locator('#workspace')).not.toBeVisible();await expect(page.locator('[data-tool="word"]')).toBeFocused();});
 
 test("No page errors or CSP violations during startup",async({page})=>{const errors=[];page.on("pageerror",e=>errors.push(e.message));await page.reload();await page.waitForFunction(()=>window.pdfjsLib&&window.XLSX);expect(errors).toEqual([]);});
+
+test('Repeated PDF previews release their background workers',async({page})=>{await open(page,'pdf');for(let i=0;i<3;i++){await upload(page,'#pdf-open','text.pdf');await expect(page.locator('#status')).toContainText('Opened text.pdf');await expect(page.locator('#pdf-pages canvas')).toHaveCount(3);await expect.poll(()=>page.workers().length).toBe(0);}});
