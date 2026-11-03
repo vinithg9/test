@@ -11,6 +11,7 @@ import tempfile
 import threading
 import time
 import zipfile
+import xml.etree.ElementTree as ET
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
@@ -50,11 +51,10 @@ def validate_input(path, extension):
                     if b'<!DOCTYPE' in rels.upper() or b'<!ENTITY' in rels.upper():
                         raise ConversionError('Unsafe document XML.')
                     # Rendering may dereference external images, templates, or linked sheets.
-                    import xml.etree.ElementTree as ET
                     for rel in ET.fromstring(rels):
                         if rel.attrib.get('TargetMode', '').lower() == 'external' and not rel.attrib.get('Type', '').endswith('/hyperlink'):
                             raise ConversionError('Remove externally linked resources before converting.')
-    except (zipfile.BadZipFile, KeyError, ValueError) as exc:
+    except (zipfile.BadZipFile, KeyError, ValueError, ET.ParseError) as exc:
         raise ConversionError('This file is not a valid Office document.') from exc
 
 def command_for(job, kind, sandbox=True):
@@ -72,20 +72,23 @@ def command_for(job, kind, sandbox=True):
         raise ConversionError('Secure conversion is unavailable. No document was processed.')
     args = [bwrap, '--unshare-all', '--die-with-parent', '--new-session', '--cap-drop', 'ALL', '--clearenv']
     # Deliberately omit /home, service state, credentials, and host network access.
-    for directory in ['/usr', '/bin', '/sbin', '/lib', '/lib64', '/opt']:
+    for directory in ['/usr', '/bin', '/sbin', '/lib', '/lib64']:
         if Path(directory).exists():
+            args += ['--ro-bind', directory, directory]
+    for directory in {sys.prefix, sys.base_prefix}:
+        if not directory.startswith('/usr'):
             args += ['--ro-bind', directory, directory]
     for directory in ['/etc/fonts', '/etc/alternatives', '/etc/libreoffice']:
         if Path(directory).exists():
             args += ['--ro-bind', directory, directory]
-    args += ['--ro-bind', str(ROOT / 'server'), str(ROOT / 'server'), '--proc', '/proc', '--dev', '/dev', '--tmpfs', '/tmp', '--bind', str(job), '/work', '--chdir', '/work', '--setenv', 'HOME', '/tmp', '--setenv', 'LANG', 'C.UTF-8', '--setenv', 'LD_LIBRARY_PATH', str(Path(sys.base_prefix) / 'lib'), '--setenv', 'PATH', '/usr/local/bin:/usr/bin:/bin']
+    args += ['--ro-bind', str(ROOT / 'server'), str(ROOT / 'server'), '--proc', '/proc', '--dev', '/dev', '--tmpfs', '/tmp', '--bind', str(job), '/work', '--chdir', '/work', '--setenv', 'OPENBLAS_NUM_THREADS', '1', '--setenv', 'OMP_NUM_THREADS', '1', '--setenv', 'HOME', '/tmp', '--setenv', 'LANG', 'C.UTF-8', '--setenv', 'LD_LIBRARY_PATH', str(Path(sys.base_prefix) / 'lib'), '--setenv', 'PATH', '/usr/local/bin:/usr/bin:/bin']
     return args + command
 
 def convert(job, kind):
     # This switch is for deterministic tests/development only; the HTTP server refuses it off loopback.
     sandbox = os.environ.get('DOCFLOW_DEV_UNSANDBOXED') != '1'
     command = command_for(job, kind, sandbox)
-    environment = {'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'HOME': str(job), 'LANG': 'C.UTF-8', 'TMPDIR': str(job), 'LD_LIBRARY_PATH': str(Path(sys.base_prefix) / 'lib')}
+    environment = {'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'HOME': str(job), 'LANG': 'C.UTF-8', 'TMPDIR': str(job), 'OPENBLAS_NUM_THREADS': '1', 'OMP_NUM_THREADS': '1', 'LD_LIBRARY_PATH': str(Path(sys.base_prefix) / 'lib')}
     proc = subprocess.Popen([sys.executable, str(ROOT / 'server' / 'limit_exec.py'), *command], cwd=job, env=environment, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
     try:
         code = proc.wait(timeout=110)
@@ -105,6 +108,24 @@ def convert(job, kind):
     if code or not output.is_file() or output.stat().st_size == 0 or output.stat().st_size > MAX_EXPANDED:
         raise ConversionError('The document could not be converted safely. It may be encrypted, unsupported, or too complex.')
     return output.read_bytes()
+
+_sandbox_ready = None
+_probe_lock = threading.Lock()
+def sandbox_ready():
+    global _sandbox_ready
+    if os.environ.get('DOCFLOW_DEV_UNSANDBOXED') == '1':
+        return False
+    with _probe_lock:
+        if _sandbox_ready is None:
+            try:
+                with tempfile.TemporaryDirectory(prefix='docflow-probe-') as tmp:
+                    command = command_for(Path(tmp), 'docx-to-pdf', True)
+                    renderer = next(i for i, value in enumerate(command) if value.endswith('/soffice'))
+                    result = subprocess.run(command[:renderer] + [command[renderer], '--version'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15)
+                    _sandbox_ready = result.returncode == 0
+            except Exception:
+                _sandbox_ready = False
+        return _sandbox_ready
 
 class Handler(BaseHTTPRequestHandler):
     server_version = 'DocFlow'
@@ -130,7 +151,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         route = urlsplit(self.path).path
         if route == '/api/health':
-            return self.send_bytes(200, json.dumps({'status': 'ok', 'secure_conversion': bool(shutil.which('bwrap')) and os.environ.get('DOCFLOW_DEV_UNSANDBOXED') != '1'}).encode())
+            ready = sandbox_ready()
+            dev = os.environ.get('DOCFLOW_DEV_UNSANDBOXED') == '1'
+            return self.send_bytes(200 if ready or dev else 503, json.dumps({'status': 'development' if dev else 'ok' if ready else 'unavailable', 'secure_conversion': ready}).encode())
         if route not in ['/', '/index.html', '/docflow-single-file.html']:
             return self.error(404, 'Not found')
         self.send_bytes(200, (ROOT / 'docflow-single-file.html').read_bytes(), 'text/html; charset=utf-8')
@@ -209,4 +232,6 @@ if __name__ == '__main__':
     bind = os.environ.get('DOCFLOW_BIND', '127.0.0.1')
     if os.environ.get('DOCFLOW_DEV_UNSANDBOXED') == '1' and bind not in ['127.0.0.1', '::1']:
         raise SystemExit('Unsandboxed development mode is restricted to loopback')
+    if os.environ.get('DOCFLOW_DEV_UNSANDBOXED') != '1' and not sandbox_ready():
+        raise SystemExit('Secure renderer capability check failed; refusing to serve conversions')
     Server((bind, int(os.environ.get('PORT', '4173'))), Handler).serve_forever()

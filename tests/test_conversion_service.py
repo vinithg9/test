@@ -15,7 +15,8 @@ ROOT=Path(__file__).resolve().parent.parent
 spec=importlib.util.spec_from_file_location('conversion_app',ROOT/'server/app.py')
 app=importlib.util.module_from_spec(spec);spec.loader.exec_module(app)
 
-class ServiceTests(unittest.TestCase):
+class ServiceFixture:
+
  @classmethod
  def setUpClass(cls):
   cls.server=app.Server(('127.0.0.1',0),app.Handler)
@@ -27,6 +28,8 @@ class ServiceTests(unittest.TestCase):
   conn=http.client.HTTPConnection('127.0.0.1',self.server.server_port,timeout=120)
   conn.request(method,path,body,{'Content-Type':'application/octet-stream',**(headers or {})})
   r=conn.getresponse();result=(r.status,dict(r.getheaders()),r.read());conn.close();return result
+
+class ServiceTests(ServiceFixture, unittest.TestCase):
  def test_health(self):
   code,headers,body=self.request('/api/health',method='GET');self.assertEqual(code,200);self.assertEqual(headers['Cache-Control'],'no-store')
  def test_cross_origin_rejected(self):
@@ -58,7 +61,7 @@ class ServiceTests(unittest.TestCase):
      z.writestr(bad,'<Relationships><Relationship TargetMode="External" Type="image" Target="file:///etc/passwd"/></Relationships>')
     with self.assertRaises(app.ConversionError):app.validate_input(p,'.docx')
 
-class RenderingTests(ServiceTests):
+class RenderingTests(ServiceFixture, unittest.TestCase):
  def test_word_layout_tables_images_and_pagination(self):
   from docx import Document
   from docx.shared import Inches
@@ -81,7 +84,7 @@ class RenderingTests(ServiceTests):
   with tempfile.TemporaryDirectory() as tmp:
    wb=Workbook();ws=wb.active;ws.title='Report';ws.append(['LAYOUT_EXCEL_SENTINEL','Value']);ws.append(['Sales',42]);ws.append(['Costs',12]);ws.column_dimensions['A'].width=35
    chart=BarChart();chart.add_data(Reference(ws,min_col=2,min_row=1,max_row=3),titles_from_data=True);ws.add_chart(chart,'A6')
-   image=Path(tmp)/'image.png';Image.new('RGB',(100,50),(40,150,50)).save(image);ws.add_image(XLImage(image),'E1');ws.print_options.horizontalCentered=True
+   image=Path(tmp)/'image.png';Image.new('RGB',(100,50),(40,150,50)).save(image);ws.add_image(XLImage(io.BytesIO(image.read_bytes())),'E1');ws.print_options.horizontalCentered=True
    ws.page_setup.orientation='landscape';ws.sheet_properties.pageSetUpPr.fitToPage=True;ws.page_setup.fitToWidth=1
    other=wb.create_sheet('Other');other['A1']='SECOND_SHEET_SENTINEL';other.column_dimensions['A'].width=40
    p=Path(tmp)/'input.xlsx';wb.save(p)
