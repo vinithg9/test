@@ -78,14 +78,14 @@ def command_for(job, kind, sandbox=True):
     for directory in ['/etc/fonts', '/etc/alternatives', '/etc/libreoffice']:
         if Path(directory).exists():
             args += ['--ro-bind', directory, directory]
-    args += ['--ro-bind', str(ROOT / 'server'), str(ROOT / 'server'), '--proc', '/proc', '--dev', '/dev', '--tmpfs', '/tmp', '--bind', str(job), '/work', '--chdir', '/work', '--setenv', 'HOME', '/tmp', '--setenv', 'LANG', 'C.UTF-8', '--setenv', 'PATH', '/usr/local/bin:/usr/bin:/bin']
+    args += ['--ro-bind', str(ROOT / 'server'), str(ROOT / 'server'), '--proc', '/proc', '--dev', '/dev', '--tmpfs', '/tmp', '--bind', str(job), '/work', '--chdir', '/work', '--setenv', 'HOME', '/tmp', '--setenv', 'LANG', 'C.UTF-8', '--setenv', 'LD_LIBRARY_PATH', str(Path(sys.base_prefix) / 'lib'), '--setenv', 'PATH', '/usr/local/bin:/usr/bin:/bin']
     return args + command
 
 def convert(job, kind):
     # This switch is for deterministic tests/development only; the HTTP server refuses it off loopback.
     sandbox = os.environ.get('DOCFLOW_DEV_UNSANDBOXED') != '1'
     command = command_for(job, kind, sandbox)
-    environment = {'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'HOME': str(job), 'LANG': 'C.UTF-8', 'TMPDIR': str(job)}
+    environment = {'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'HOME': str(job), 'LANG': 'C.UTF-8', 'TMPDIR': str(job), 'LD_LIBRARY_PATH': str(Path(sys.base_prefix) / 'lib')}
     proc = subprocess.Popen([sys.executable, str(ROOT / 'server' / 'limit_exec.py'), *command], cwd=job, env=environment, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
     try:
         code = proc.wait(timeout=110)

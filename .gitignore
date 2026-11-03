@@ -7,3 +7,4 @@ release-fixtures/
 preview-dist/
 __pycache__/
 *.pyc
+.venv/

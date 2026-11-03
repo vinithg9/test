@@ -8,7 +8,7 @@ permissions:
   contents: read
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -23,6 +23,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libreoffice-writer libreoffice-calc bubblewrap fonts-dejavu-core
           python -m pip install -r server/requirements.txt pillow openpyxl
+      - name: Verify sandbox capability
+        run: python scripts/check-sandbox.py
       - name: Verify secure service and layout preservation
         run: python -m unittest discover -s tests -p test_conversion_service.py -v
       - name: Install pinned verification dependencies
