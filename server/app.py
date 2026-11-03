@@ -2,14 +2,12 @@
 import json
 import os
 from pathlib import Path
-import resource
 import shutil
 import signal
 import subprocess
 import sys
 import tempfile
 import threading
-import time
 import zipfile
 import xml.etree.ElementTree as ET
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -44,7 +42,7 @@ def validate_input(path, extension):
                 name = entry.filename.replace('\\', '/')
                 if name.startswith('/') or '..' in name.split('/') or entry.flag_bits & 1:
                     raise ConversionError('Unsafe or encrypted document archive.')
-                if 'vbaproject' in name.lower() or name.lower().endswith('.bin'):
+                if 'vbaproject' in name.lower() or (name.lower().endswith('.bin') and '/printersettings/' not in name.lower()):
                     raise ConversionError('Documents containing macros or embedded binaries are not supported.')
                 if name.endswith('.rels'):
                     rels = archive.read(entry)
@@ -52,8 +50,11 @@ def validate_input(path, extension):
                         raise ConversionError('Unsafe document XML.')
                     # Rendering may dereference external images, templates, or linked sheets.
                     for rel in ET.fromstring(rels):
-                        if rel.attrib.get('TargetMode', '').lower() == 'external' and not rel.attrib.get('Type', '').endswith('/hyperlink'):
-                            raise ConversionError('Remove externally linked resources before converting.')
+                        if rel.attrib.get('TargetMode', '').lower() == 'external':
+                            is_link = rel.attrib.get('Type', '').endswith('/hyperlink')
+                            scheme = urlsplit(rel.attrib.get('Target', '')).scheme.lower()
+                            if not is_link or scheme not in ['http', 'https', 'mailto']:
+                                raise ConversionError('Remove unsafe links or externally linked resources before converting.')
     except (zipfile.BadZipFile, KeyError, ValueError, ET.ParseError) as exc:
         raise ConversionError('This file is not a valid Office document.') from exc
 
