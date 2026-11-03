@@ -6,6 +6,8 @@ import json
 import os
 from pathlib import Path
 import tempfile
+import subprocess
+import sys
 import threading
 import unittest
 import zipfile
@@ -52,6 +54,16 @@ class ServiceTests(ServiceFixture, unittest.TestCase):
  def test_secure_mode_fails_closed(self):
   with tempfile.TemporaryDirectory() as tmp,patch.object(app.shutil,'which',return_value=None):
    with self.assertRaises(app.ConversionError):app.command_for(Path(tmp),'docx-to-pdf',True)
+ def test_sandbox_filesystem_and_network_are_isolated(self):
+  if os.environ.get('DOCFLOW_DEV_UNSANDBOXED')=='1':
+   self.skipTest('Development renderer test; isolation is verified in CI')
+  with tempfile.NamedTemporaryFile(prefix='docflow-private-') as secret, tempfile.TemporaryDirectory() as tmp:
+   command=app.command_for(Path(tmp),'docx-to-pdf',True)
+   renderer=next(i for i,value in enumerate(command) if value.endswith('/soffice'))
+   code="import json,os,socket; s=socket.socket();s.settimeout(2);print(json.dumps({'host_file_visible':os.path.exists("+repr(secret.name)+"),'network_connected':s.connect_ex(('1.1.1.1',443))==0}))"
+   result=subprocess.run(command[:renderer]+[sys.executable,'-c',code],capture_output=True,text=True,timeout=10)
+   self.assertEqual(result.returncode,0,result.stderr)
+   self.assertEqual(json.loads(result.stdout),{'host_file_visible':False,'network_connected':False})
  def test_archive_traversal_and_external_resources(self):
   for bad in ['../escape','word/vbaProject.bin','word/external.rels']:
    with tempfile.TemporaryDirectory() as tmp:
