@@ -1,0 +1,10 @@
+pdf2docx==0.5.8
+PyMuPDF==1.26.6
+python-docx==1.2.0
+fonttools==4.61.1
+numpy==2.3.5
+opencv-python-headless==5.0.0.93
+fire==0.7.1
+termcolor==3.3.0
+lxml==6.1.1
+typing_extensions==4.16.0

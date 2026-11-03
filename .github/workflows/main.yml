@@ -15,10 +15,20 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install sandbox and document renderers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libreoffice-writer libreoffice-calc bubblewrap fonts-dejavu-core
+          python -m pip install -r server/requirements.txt pillow openpyxl
+      - name: Verify secure service and layout preservation
+        run: python -m unittest discover -s tests -p test_conversion_service.py -v
       - name: Install pinned verification dependencies
-        run: npm install --no-save @playwright/test@1.56.1 docx@9.5.1 https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz pdf-lib@1.17.1 mammoth@1.9.1
+        run: npm install --no-save @playwright/test@1.64.1 docx@9.5.1 https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz pdf-lib@1.17.1 mammoth@1.9.1
       - name: Install browsers
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium firefox webkit
       - name: Verify release workflows
         run: npx playwright test
       - name: Preserve test evidence
