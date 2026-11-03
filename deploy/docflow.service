@@ -1,0 +1,27 @@
+[Unit]
+Description=DocFlow document service
+After=network.target
+
+[Service]
+Type=simple
+User=docflow
+Group=docflow
+WorkingDirectory=/opt/docflow
+Environment=DOCFLOW_BIND=127.0.0.1
+Environment=PORT=4173
+ExecStart=/opt/docflow/.venv/bin/python /opt/docflow/server/app.py
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/tmp
+MemoryMax=3G
+TasksMax=256
+CPUQuota=200%
+LimitNOFILE=1024
+
+[Install]
+WantedBy=multi-user.target
